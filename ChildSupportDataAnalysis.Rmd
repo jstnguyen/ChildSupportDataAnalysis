@@ -1,0 +1,565 @@
+---
+title: "Final Project"
+author: "Ellie Bi, Justin Nguyen, Terrie Kim"
+date: "2023-03-14"
+output: pdf_document
+---
+
+```{r}
+library('ggplot2')
+library(tidyverse)
+```
+
+
+# Problem 1
+
+*a)*
+
+```{r}
+Cases <- as.data.frame(read.csv("C:/Users/ellie/OneDrive/Documents/cases.csv"))
+Children <- as.data.frame(read.csv("C:/Users/ellie/OneDrive/Documents/children.csv"))
+Parents <- as.data.frame(read.csv("C:/Users/ellie/OneDrive/Documents/parents.csv"))
+Payments <- as.data.frame(read.csv("C:/Users/ellie/OneDrive/Documents/payments.csv"))
+```
+
+```{r}
+dim(Cases)
+dim(Children)
+dim(Parents)
+dim(Payments)
+```
+
+*b)*
+
+```{r}
+hist(table(Children$CASE_NUM), main = 'Children per Case', xlab = 'Case Number', ylab = 'Number of Children')
+
+case_distrb <- mean(table(Children$CASE_NUM)); case_distrb
+points(x = case_distrb, y = 0, col = 'orange', pch = 19)
+```
+The distribution is skewed right with the location of average number being around 1.595991.
+
+*c)*
+
+```{r}
+max(table(Children$ID))
+```
+The most number of cases per child is 12. It is the same child because each child has a unique ID, and since the table() function returns a contingency table, the max() function will find the largest number of cases associated with one child.
+
+*d)*
+
+```{r}
+pool.pay.par <- Payments %>%
+  left_join(Parents, by = 'AP_ID')
+sum(is.na(pool.pay.par$AP_ID))
+```
+Every absent parent does have an identifying record because there are no missing rows when the payments and parents data frames are joined.
+
+# Problem 2
+
+
+```{r}
+pool_categories <- function(var, threshold){
+  if ("Other" %in% levels(var)){  # checks if Other already exists
+    stop("'Other' Already Exists")
+  }
+  tab <- table(var)
+  cat_list <- vector(mode = "list")
+  count = 0
+  for (i in tab){
+    count = count + 1
+    if (i < threshold){
+      cat_list <- append(cat_list, tab[count])
+    }
+  }
+  
+  change <- names(cat_list)
+  
+  for (i in change) {
+    var[var == i] <- 'Other'
+  }
+  return(var)
+}
+```
+
+
+```{r}
+# testing the function
+table(pool_categories(Payments$PYMNT_SRC, 8))
+table(pool_categories(Payments$PYMNT_SRC, 150))
+table(pool_categories(Payments$PYMNT_SRC, 20000))
+```
+
+
+# Problem 3
+
+*a)*
+
+```{r}
+# changes the dates to the correct format
+Payments$DATE <- as.Date(Payments$COLLECTION_DT, format =  "%m/%d/%Y"); head(Payments)
+```
+
+```{r}
+#(i)
+min(Payments$DATE)
+max(Payments$DATE)
+max(Payments$DATE) - min(Payments$DATE)  # range of dates of all payments
+```
+```{r}
+#(ii)
+payments.before <- Payments %>% filter(Payments$DATE < '2015-05-01') %>% nrow(); payments.before
+
+total.payments <- nrow(Payments); total.payments
+
+payments.before/total.payments  # percentage of payments made before 5/1/2015
+```
+
+*b)*
+
+```{r}
+# data
+Payments.af.may <- Payments %>%
+  filter(Payments$DATE >= '2015-05-01') %>%  # filtering payments after 5/1/2015
+  arrange()
+counts <- table(Payments.af.may$DATE)  # creating a frequency table 
+# setting table into df
+new.payments <- setNames(data.frame(counts), c('Date', 'Count'))  
+```
+
+
+```{r}
+ggplot(data = new.payments, mapping = aes(x = Date, y = Count, group = 1)) +
+  geom_line() +  # plotting line plot
+  labs(title = 'Number of Payments per Day After 5/1/2015')
+```
+*c)*
+
+The bimodal shape we see has its peaks around the summer months whereas the lows typically are around May, March, and October. These fluctuations depend on the payment dates. This happens because more people are paying on similar days due to child support payments being due. Depending on money consuming events, such as tax filings in the beginning of the year and holiday season at the end, payment dates will fluctuate throughout the month. The peaks in the data typically occur around the end of the month or the beginning of the month, which indicate timely payments as people tend to pay at the very start or end of each payment period.
+
+
+*d)*
+
+```{r}
+#sample
+sample <- Payments[sample(nrow(Payments), 50000), ]  
+# creating df of counts
+amnt <- setNames(data.frame(table(sample$PYMNT_AMT)), c('Amount', 'Count'))  
+
+ggplot(data = amnt, mapping = aes(x = Amount, y = Count, group = 1)) +
+  geom_point(alpha = 0.5, color = 'blue') +
+  labs(title = 'Number of Payments per Day After 5/1/2015')
+```
+
+The distribution is right skewed, which indicate that less people pay a larger amount. Because the distribution is right skewed, the data shows a median that is smaller than the mean, meaning that larger payments have an affect on the mean. The reason why the distribution could be right skewed can depend on the number of children that the parent has to account for. Since the average parent accounts for 1-3 children, the median data would gather around a smaller payment amount. 
+
+# Problem 4
+
+```{r}
+# creating subset of payment + parents dataframe, 
+# selecting only the ID and the payment amount they made
+id.payment <- subset(pool.pay.par, select = c("AP_ID", "PYMNT_AMT"))  
+
+# creating a frequency table indicating how many times the absent parent made a payment 
+# by tallying how many times AP_ID appears
+ap_id.pymntct <- setNames(data.frame(table(id.payment$AP_ID)), c('AP_ID', 'Payment_Count'))
+ap_id.pymntct$AP_ID <- as.integer(as.character(ap_id.pymntct$AP_ID))
+
+# creating a dataframe with the total payment amount made by AP_ID
+pool <- pool.pay.par %>% 
+  group_by(AP_ID) %>% 
+  summarise(Payment_Amount = sum(PYMNT_AMT)) %>% 
+  ungroup()
+
+# creating a dataframe that represents the number of children an absent parent has
+a <- Parents %>% left_join(Cases, by = "AP_ID") 
+b <- a %>% left_join(Children, by = "CASE_NUM") 
+child_per <- b %>% 
+  group_by(AP_ID) %>% 
+  summarise(Num_Children = n_distinct(ID), CASE_NUM = CASE_NUM) %>% 
+  ungroup()
+
+# joining all the dataframes together and removing duplicate AP_IDs
+absent_parent <- pool %>% 
+  left_join(ap_id.pymntct, by = 'AP_ID') %>% 
+  inner_join(child_per, by = 'AP_ID') %>% 
+  inner_join(Parents, by = 'AP_ID') %>% 
+  distinct(AP_ID, .keep_all =  TRUE); head(absent_parent)
+```
+
+*a)*
+
+Null Hypothesis: There is no relationship between the number of children a parent is responsible for and the number of payments they make.
+
+Alternative Hypothesis: There is a positive relationship between the number of children a parent is responsible for and the number of payments they make.
+
+Assumptions: Since we are measuring a linear relationship, and the data is random and normally distributed, it is possible to use a correlation coefficient test.
+
+Let alpha be a conservative estimate of 0.05. 
+
+```{r}
+# using cor.test to test association
+cor.test(absent_parent$Num_Children, absent_parent$Payment_Count)
+```
+Since the p-value of 2.2e-16 is less than the alpha of 0.05, we can reject the null hypothesis. 
+
+It is possible to say that there is a slightly positive correlation between the number of children a parent is responsible for and the number of payments they make. A correlation coefficient of 0.31 indicates there is a positive relationship between the number of children and the total number of payments they make, but that the linear association is weak.
+
+*__*
+
+Null Hypothesis: There is no relationship between the number of children a parent is responsible for and the total payment amount.
+
+Alternative Hypothesis: There is a positive relationship between the number of children a parent is responsible for and the total payment amount.
+
+Assumptions: Since we are measuring a linear relationship, and the data is random and normally distributed, it is possible to use a correlation coefficient test.
+
+Let alpha be a conservative estimate of 0.05. 
+
+```{r}
+cor.test(absent_parent$Num_Children, absent_parent$Payment_Amount)
+```
+
+Since the p-value of 2.2e-16 is less than the alpha of 0.05, we can reject the null hypothesis. 
+
+It is possible to say that there is a slightly positive correlation between the number of children a parent is responsible for and the total payment amount. A correlation coefficient of 0.24 indicates there is a positive relationship between the number of children and the total payment amount, but that the linear association is weak.
+
+
+*b)*
+
+```{r}
+# creating a copy of Children df
+ChildrenCopy <- Children
+# finding the age of a child by finding the difference between their DOB and 1/1/2017
+ChildrenCopy$Age <- as.Date('2017-01-01') - as.Date(ChildrenCopy$DATE_OF_BIRTH_DT, format =  "%m/%d/%Y")
+# converting from days to years
+ChildrenCopy$Year <- as.numeric(gsub("days", "", ChildrenCopy$Age / 365))
+
+# joining the children df with the Cases df
+ChildrenOfAP <- ChildrenCopy %>% left_join(Cases, by = "CASE_NUM")
+
+# creating subset of Case #, children ID, and their age
+ChildrenAge <- subset(ChildrenOfAP, select = c('CASE_NUM', 'ID', 'Year'))
+
+# finding which absent parent belongs to which child by joining df based on case #s 
+# and removing duplicates
+child.pay.age <- ChildrenAge %>% 
+  right_join(absent_parent, by = 'CASE_NUM') %>% 
+  distinct(ID, .keep_all = TRUE)
+
+# finding the average age of each child by dividing 
+# the sum of the their ages by the number of children
+avg_age <- child.pay.age %>% 
+  group_by(AP_ID) %>% 
+  summarise(avg_age = sum(Year) / Num_Children) %>% 
+  distinct(AP_ID, .keep_all =  TRUE); head(avg_age)
+```
+
+```{r}
+#creating a df with AP_ID, the avg age, and the payment amounts made by each parent
+age.count <- avg_age %>% 
+  left_join(absent_parent, by = 'AP_ID') %>% 
+  distinct(AP_ID, .keep_all =  TRUE)
+
+# creating a subset of just average age and the payment amout
+age.count.pymnt <- na.omit(subset(age.count, select = c('avg_age', 'Payment_Amount')))
+head(age.count.pymnt)
+```
+
+Null Hypothesis: There is no association between the average age of children a parent is responsible for and the total payment amount.
+
+Alternative Hypothesis: There is an association between the average age of children a parent is responsible for and the total payment amount. 
+
+Assumptions: Since we are measuring a linear relationship, and the data is random and normally distributed, it is possible to use a correlation coefficient test.
+
+Let alpha be a conservative estimate of 0.05. 
+
+```{r}
+# using cor.test to test the association
+cor.test(age.count.pymnt$avg_age, age.count.pymnt$Payment_Amount)
+```
+
+Since the p-value of 2.2e-16 is less than the alpha of 0.05, we can reject the null hypothesis. 
+
+It is possible to say that there is a slightly negative correlation between the average age of children a parent is responsible for and the total payment amount. A correlation coefficient of -0.24 indicates that as the average age increases, there is a decrease in total payment amount, but it is a weak linear association.
+
+*c)*
+
+```{r}
+# creating a subset of a df of just AP_ID, payment amount, and zip code
+abs.zip <- subset(absent_parent, select = c('AP_ID', 'Payment_Amount', 'AP_ADDR_ZIP'))
+```
+
+```{r}
+# using ggplot to show data
+ggplot(data = abs.zip, mapping = aes(x = AP_ADDR_ZIP, y = Payment_Amount)) +
+  geom_hex()
+```
+
+Looking at the graph, we can conclude that location of the parent can anticipate the total payment amount. Zip codes 01 and 03 are more likely to have a higher total payment amount compared to 00, 02, and 04, suggesting that these are areas that must make more payment amounts.
+
+*d)*
+
+1)
+
+Null Hypothesis: There is no relationship between the total amount of payments and the number of children.
+
+Alternative Hypothesis: There is a relationship between the total amount of payments and the number of children.
+
+2)
+
+Null Hypothesis: There is no relationship between the total amount of payments and the average age of children.
+
+Alternative Hypothesis: There is a relationship between the total amount of payments and the average age of children.
+
+3)
+
+Null Hypothesis: There is no relationship between the total amount of payments and the interaction between the number and average age of children.
+
+Alternative Hypothesis: There is a relationship between the total amount of payments and the interaction between the number and average age of children.
+
+Let alpha be a conservative estimate of 0.05. 
+
+```{r}
+summary(lm(Payment_Amount ~ Num_Children * avg_age, data = age.count))
+```
+
+Since the p-value of 2.2e-16 is less than the alpha of 0.05, we can reject the null hypotheses. Therefore, all variables are statistically significant.
+
+There is evidence to suggest that there is a relationship between the number of children, average children age, and their interaction with the total payment amount.
+
+Payment_Amount = 5759.227 + 1122.647(Num_Children) - 96.875(avg_age) - 41.365(Num_Children:avg_age)
+
+There is a positive relationship between the number of children and the payment amount, a negative relationship between the average age and the payment amount, and a negative relationship between the interaction of the two variables and the payment amount.
+
+# Problem 5
+
+*a)*
+
+```{r}
+# creating df with sum of payment amounts per day
+pymnts.date <- Payments %>% 
+  group_by(DATE, AP_ID) %>%
+  summarise(daily_pay = sum(PYMNT_AMT)) %>% 
+  arrange(AP_ID, DATE) %>% 
+  ungroup()
+
+# creating df with the sd and mean of each daily payment associated with AP_ID
+pymnts.daily <- pymnts.date %>% 
+  group_by(AP_ID) %>% 
+  summarise(sd(daily_pay), mean(daily_pay)); head(pymnts.daily)
+```
+
+Null Hypothesis: There is no association between the SD of total daily payments and the average of total daily payments.
+
+Alternative Hypothesis: There is an association between the SD of total daily payments and the average of total daily payments.
+
+Assumptions: Since we are measuring a linear relationship, and the data is random and normally distributed, it is possible to use a correlation coefficient test.
+
+Let alpha be a conservative estimate of 0.05. 
+
+```{r}
+# using cor.test to test association
+cor.test(pymnts.daily$`sd(daily_pay)`, pymnts.daily$`mean(daily_pay)`)
+```
+
+Since the p-value of 2.2e-16 is less than the alpha of 0.05, we can reject the null hypothesis.
+
+There is evidence to suggest that there is an association between the SD of total daily payments and the average of total daily payments. Since the correlation coefficient is 0.76, there is evidence to say that the association is a strong linear association.
+
+*b)*
+
+```{r}
+#finding the CV values and rounding to the ten thousandths place
+pymnts.daily$CV <- round(pymnts.daily$`sd(daily_pay)`/ pymnts.daily$`mean(daily_pay)`, 4)
+
+# omitting NA values
+pymnts.daily.omit <- na.omit(pymnts.daily)
+
+min(pymnts.daily.omit$CV)  # finding min CV values
+median(pymnts.daily.omit$CV) # finding median CV values
+max(pymnts.daily.omit$CV) # finding max CV values
+
+low <- pymnts.daily.omit[pymnts.daily.omit$CV == 0,]
+med <- pymnts.daily.omit[pymnts.daily.omit$CV == 0.3037,]
+```
+
+```{r}
+# finding representative low CV parent
+low.sample <- sample_n(low, 1); low.sample  
+# finding representative medium CV parent
+med.sample <- sample_n(med, 1); med.sample  
+# finding representative high CV parent
+high <- pymnts.daily.omit[pymnts.daily.omit$CV == 7.2285,]; high  
+```
+
+
+For the lowest CV of 0, a representative parent is 1748799. 
+
+```{r}
+# time plot for lowest CV
+low.cv.data <- pymnts.date %>% filter(AP_ID == 1748799)
+
+ggplot(data = low.cv.data, mapping = aes(x = DATE, y = daily_pay)) + 
+  geom_line() + 
+  labs(title = 'Low CV Time Seqeuence Plot')
+```
+
+
+For a median CV of 0.3037, a representative parent is 1801087.
+
+```{r}
+# time plot for medium CV
+med.cv.data <- pymnts.date %>% filter(AP_ID == 1801087)
+
+ggplot(data = med.cv.data, mapping = aes(x = DATE, y = daily_pay)) + 
+  geom_line() + 
+  labs(title = 'Medium CV Time Seqeuence Plot')
+```
+
+For a high CV of 7.2285, a representative parent is 1725000.
+
+```{r}
+# time plot for highest CV
+high.cv.data <- pymnts.date %>% filter(AP_ID == 1725000)
+
+ggplot(data = high.cv.data, mapping = aes(x = DATE, y = daily_pay)) + 
+  geom_line() + 
+  labs(title = 'High CV Time Seqeuence Plot')
+```
+
+*c)*
+
+```{r}
+# creating df by joining the CV df and the absent_parent df
+daily.par.pay <- pymnts.daily.omit %>% left_join(absent_parent, by = "AP_ID")
+
+# creating a subset df of AP_IDs, CV, and payment amount
+daily.par.pay <- subset(daily.par.pay, select = c("AP_ID", "CV", "Payment_Amount"))
+head(daily.par.pay)
+```
+
+
+Null Hypothesis: There is no association between the total amount of payments and the CV of payments.
+
+Alternative Hypothesis: There is an association between the total amount of payments and the CV of payments.
+
+Assumptions: Since we are measuring a linear relationship, and the data is random and normally distributed, it is possible to use a correlation coefficient test.
+
+Let alpha be a conservative estimate of 0.05. 
+
+```{r}
+# using cor.test to test association
+cor.test(daily.par.pay$CV, daily.par.pay$Payment_Amount)
+```
+
+Since the p-value of 3.828e-12 is less than the alpha of 0.05, we can reject the null hypotheses.
+
+There is evidence to suggest that there is an association between the total amount of payments and the CV of payments. With a correlation coefficient of 0.04, there is a weaker linear association between CV and payment amount.
+
+*d)*
+
+1)
+
+Null Hypothesis: There is no relationship between the CV and number of children.
+
+Alternative Hypothesis: There is a relationship between the CV and number of children.
+
+2)
+
+Null Hypothesis: There is no relationship between the CV and average age.
+
+Alternative Hypothesis: There is a relationship between the CV and average age.
+
+3)
+
+Null Hypothesis: There is no relationship between the CV and zip code 01.
+
+Alternative Hypothesis: There is a relationship between the CV and zip code 01.
+
+4)
+
+Null Hypothesis: There is no relationship between the CV and zip code 02.
+
+Alternative Hypothesis: There is a relationship between the CV and zip code 02.
+
+5)
+
+Null Hypothesis: There is no relationship between the CV and zip code 03.
+
+Alternative Hypothesis: There is a relationship between the CV and zip code 03.
+
+6)
+
+Null Hypothesis: There is no relationship between the CV and zip code 04.
+
+Alternative Hypothesis: There is a relationship between the CV and zip code 04.
+
+7)
+
+Null Hypothesis: There is no relationship between the CV and zip code NA.
+
+Alternative Hypothesis: There is a relationship between the CV and zip code NA.
+
+Let alpha be a conservative estimate of 0.05. 
+
+
+```{r}
+bonus <- pymnts.daily.omit %>% 
+  left_join(absent_parent, by = "AP_ID") %>% 
+  left_join(avg_age, by = "AP_ID")
+
+# creating subset df of AP_IDs, CVs, the number of children, avg_age, and zip
+bonus <- na.omit(subset(bonus, select = c("AP_ID", "CV", "Num_Children", "avg_age", "AP_ADDR_ZIP")))
+head(bonus)
+
+summary(lm(CV ~ Num_Children + avg_age + AP_ADDR_ZIP , data = bonus))
+```
+
+Since the p-value of 2.2e-16 and 5.4e-11 are less than the alpha of 0.05, we can reject the null hypotheses for the number of children and average age of children. 
+
+There is evidence to suggest that there is a relationship between the number of children and average children age with the CV.
+
+Alternatively, p-values that are greater than 0.4 are greater than our alpha of 0.05 so we fail to reject the null hypotheses that there are no relationship between the CV and zip codes 01, 02, 03, 04, and NA.
+
+This suggests that the number of children and average children age affect the CV while the zip codes do not.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
